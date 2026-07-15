@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Buscador de leilões ativos por item, cidade, estado e categoria." />
+  <title>NexLote — Consulta de Leilões</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container brand-row">
+      <a class="brand" href="/" aria-label="Página inicial">
+        <span class="brand-mark">N</span>
+        <span>
+          <strong>NexLote</strong>
+          <small>Leilões em um só lugar</small>
+        </span>
+      </a>
+      <button id="themeToggle" class="icon-button" aria-label="Alternar tema">◐</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <span class="eyebrow">CONSULTA INTELIGENTE</span>
+        <h1>Encontre leilões ativos por item, cidade ou estado</h1>
+        <p>Pesquise por “TV”, “carro”, “Goiânia”, “eletrodomésticos” ou qualquer outro termo.</p>
+
+        <form id="searchForm" class="search-panel">
+          <div class="search-main">
+            <label class="sr-only" for="searchInput">Buscar leilões</label>
+            <span class="search-icon">⌕</span>
+            <input id="searchInput" name="q" type="search" autocomplete="off"
+              placeholder="Ex.: TV, lote de televisores, Goiânia, carros..." />
+            <button type="submit" class="primary-button">Buscar</button>
+          </div>
+
+          <div class="quick-filters">
+            <select id="stateFilter" aria-label="Filtrar por estado">
+              <option value="">Todos os estados</option>
+            </select>
+
+            <select id="cityFilter" aria-label="Filtrar por cidade">
+              <option value="">Todas as cidades</option>
+            </select>
+
+            <select id="categoryFilter" aria-label="Filtrar por categoria">
+              <option value="">Todas as categorias</option>
+            </select>
+
+            <select id="sourceFilter" aria-label="Filtrar por leiloeiro">
+              <option value="">Todos os sites</option>
+            </select>
+
+            <select id="sortFilter" aria-label="Ordenação">
+              <option value="dateAsc">Data mais próxima</option>
+              <option value="dateDesc">Data mais distante</option>
+              <option value="priceAsc">Menor lance</option>
+              <option value="priceDesc">Maior lance</option>
+            </select>
+
+            <button type="button" id="clearFilters" class="secondary-button">Limpar filtros</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="container content">
+      <div class="results-heading">
+        <div>
+          <h2>Leilões encontrados</h2>
+          <p id="resultsSummary">Faça uma busca para consultar os lotes.</p>
+        </div>
+        <div id="loading" class="loading hidden" aria-live="polite">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div id="activeFilters" class="active-filters"></div>
+      <div id="results" class="results-grid"></div>
+
+      <div id="emptyState" class="empty-state hidden">
+        <div class="empty-icon">⌕</div>
+        <h3>Nenhum leilão encontrado</h3>
+        <p>Tente outro termo ou remova alguns filtros.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="detailsDialog" class="details-dialog">
+    <button id="closeDialog" class="dialog-close" aria-label="Fechar">×</button>
+    <div id="dialogContent"></div>
+  </dialog>
+
+  <footer class="footer">
+    <div class="container">
+      <p>Os dados são coletados de fontes cadastradas. Confirme condições, taxas e prazos diretamente no site do leiloeiro.</p>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
