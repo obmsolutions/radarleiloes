@@ -1,207 +1,217 @@
-const state = { allLots: [], filteredLots: [], query: '', favorites: new Set(JSON.parse(localStorage.getItem('favoritos') || '[]')) };
+/*
+ Radar Leilões Frontend v1.1
+ Antes de publicar, altere somente a linha API_BASE abaixo.
+*/
+const API_BASE = "https://radarleiloes-api.onrender.com";
 
-const $ = (selector) => document.querySelector(selector);
-const searchForm = $("#searchForm");
-const searchInput = $("#searchInput");
+const STORAGE = {
+  favorites: "radarLeiloes_favorites",
+  notes: "radarLeiloes_notes",
+  theme: "radarLeiloes_theme"
+};
+
+const state = {
+  items: [],
+  filtered: [],
+  query: "",
+  favorites: new Set(JSON.parse(localStorage.getItem(STORAGE.favorites) || "[]")),
+  notes: JSON.parse(localStorage.getItem(STORAGE.notes) || "{}")
+};
+
+const $ = selector => document.querySelector(selector);
 const results = $("#results");
-const loading = $("#loading");
+const summary = $("#resultsSummary");
 const emptyState = $("#emptyState");
-const resultsSummary = $("#resultsSummary");
 const activeFilters = $("#activeFilters");
+const searchInput = $("#searchInput");
 const detailsDialog = $("#detailsDialog");
-const dialogContent = $("#dialogContent");
+const detailsContent = $("#detailsContent");
 
 const filters = {
   state: $("#stateFilter"),
   city: $("#cityFilter"),
   category: $("#categoryFilter"),
   source: $("#sourceFilter"),
-  sort: $("#sortFilter"),
+  status: $("#statusFilter"),
+  sort: $("#sortFilter")
 };
 
-function formatCurrency(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return "Consulte";
+function escapeHtml(value = "") {
+  return String(value).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
+}
+function currency(value) {
+  if (value === null || value === undefined || value === "") return "Consulte";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
 }
-
-function formatDate(iso) {
-  if (!iso) return "Data não informada";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short"
-  }).format(new Date(iso));
+function dateTime(value) {
+  if (!value) return "Data não identificada";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
-
-function escapeHtml(text = "") {
-  return String(text).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-  }[char]));
+function unique(values) {
+  return [...new Set(values.filter(Boolean))].sort((a,b) => a.localeCompare(b, "pt-BR"));
 }
-
-function uniqueSorted(values) {
-  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-}
-
-function setOptions(select, values, placeholder) {
+function setOptions(select, values, label) {
+  if (!select) return;
   const current = select.value;
-  select.innerHTML = `<option value="">${placeholder}</option>` +
-    values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
+  select.innerHTML = `<option value="">${label}</option>` + values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
   if (values.includes(current)) select.value = current;
 }
-
-function populateFilters(lots) {
-  setOptions(filters.state, uniqueSorted(lots.map(l => l.state)), "Todos os estados");
-  setOptions(filters.city, uniqueSorted(lots.map(l => l.city)), "Todas as cidades");
-  setOptions(filters.category, uniqueSorted(lots.map(l => l.category)), "Todas as categorias");
-  setOptions(filters.source, uniqueSorted(lots.map(l => l.source)), "Todos os sites");
+function populateFilters() {
+  setOptions(filters.state, unique(state.items.map(i => i.state)), "Todos os estados");
+  setOptions(filters.city, unique(state.items.map(i => i.city)), "Todas as cidades");
+  setOptions(filters.category, unique(state.items.map(i => i.category)), "Todas as categorias");
+  setOptions(filters.source, unique(state.items.map(i => i.source)), "Todos os sites");
 }
-
-function renderActiveFilters() {
-  const labels = [];
-  if (state.query) labels.push(`Busca: ${state.query}`);
-  if (filters.state.value) labels.push(`Estado: ${filters.state.value}`);
-  if (filters.city.value) labels.push(`Cidade: ${filters.city.value}`);
-  if (filters.category.value) labels.push(`Categoria: ${filters.category.value}`);
-  if (filters.source.value) labels.push(`Site: ${filters.source.value}`);
-  activeFilters.innerHTML = labels.map(label => `<span class="filter-chip">${escapeHtml(label)}</span>`).join("");
-}
-
-function applyFilters() {
-  const now = new Date();
-  let data = state.allLots.filter(lot => new Date(lot.endDate) >= now);
-
-  if (filters.state.value) data = data.filter(l => l.state === filters.state.value);
-  if (filters.city.value) data = data.filter(l => l.city === filters.city.value);
-  if (filters.category.value) data = data.filter(l => l.category === filters.category.value);
-  if (filters.source.value) data = data.filter(l => l.source === filters.source.value);
-
-  const sort = filters.sort.value;
-  data.sort((a, b) => {
-    if (sort === "dateDesc") return new Date(b.endDate) - new Date(a.endDate);
+function applyLocalFilters() {
+  let items = [...state.items];
+  if (filters.state?.value) items = items.filter(i => i.state === filters.state.value);
+  if (filters.city?.value) items = items.filter(i => i.city === filters.city.value);
+  if (filters.category?.value) items = items.filter(i => i.category === filters.category.value);
+  if (filters.source?.value) items = items.filter(i => i.source === filters.source.value);
+  if (filters.status?.value === "favorites") items = items.filter(i => state.favorites.has(i.id));
+  if (filters.status?.value === "soon") {
+    const limit = new Date(); limit.setDate(limit.getDate() + 3);
+    items = items.filter(i => i.endDate && new Date(i.endDate) <= limit);
+  }
+  const sort = filters.sort?.value || "dateAsc";
+  items.sort((a,b) => {
+    if (sort === "dateDesc") return new Date(b.endDate || 0) - new Date(a.endDate || 0);
     if (sort === "priceAsc") return (a.currentBid ?? Infinity) - (b.currentBid ?? Infinity);
     if (sort === "priceDesc") return (b.currentBid ?? -Infinity) - (a.currentBid ?? -Infinity);
+    if (sort === "titleAsc") return a.title.localeCompare(b.title, "pt-BR");
+    if (!a.endDate) return 1;
+    if (!b.endDate) return -1;
     return new Date(a.endDate) - new Date(b.endDate);
   });
-
-  state.filteredLots = data;
-  renderLots();
-  renderActiveFilters();
+  state.filtered = items;
+  render();
 }
+function render() {
+  summary.textContent = `${state.filtered.length} oportunidade${state.filtered.length === 1 ? "" : "s"} encontrada${state.filtered.length === 1 ? "" : "s"}.`;
+  emptyState?.classList.toggle("hidden", state.filtered.length > 0);
+  const chips = [];
+  if (state.query) chips.push(`Busca: ${state.query}`);
+  if (filters.state?.value) chips.push(`Estado: ${filters.state.value}`);
+  if (filters.city?.value) chips.push(`Cidade: ${filters.city.value}`);
+  if (filters.category?.value) chips.push(`Categoria: ${filters.category.value}`);
+  if (filters.source?.value) chips.push(`Site: ${filters.source.value}`);
+  if (activeFilters) activeFilters.innerHTML = chips.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join("");
 
-function renderLots() {
-  const lots = state.filteredLots;
-  resultsSummary.textContent = `${lots.length} lote${lots.length === 1 ? "" : "s"} ativo${lots.length === 1 ? "" : "s"}, ordenado${lots.length === 1 ? "" : "s"} conforme o filtro selecionado.`;
-  emptyState.classList.toggle("hidden", lots.length > 0);
-  results.innerHTML = lots.map(lot => `
-    <article class="lot-card">
-      <button class="lot-image-wrap js-details" data-id="${escapeHtml(lot.id)}" aria-label="Ver detalhes de ${escapeHtml(lot.title)}" style="border:0;padding:0;text-align:left">
-        <img class="lot-image" src="${escapeHtml(lot.imageUrl)}" alt="${escapeHtml(lot.title)}" loading="lazy"
-          onerror="this.src='https://placehold.co/900x600/161c2b/98a2b8?text=Imagem+indisponível'">
-        <span class="source-badge">${escapeHtml(lot.source)}</span>
-      </button>
-
+  results.innerHTML = state.filtered.map(item => {
+    const fav = state.favorites.has(item.id);
+    const note = state.notes[item.id] || "";
+    return `<article class="lot-card">
+      <div class="image-button js-details" data-id="${escapeHtml(item.id)}" role="button" tabindex="0">
+        <img class="lot-image" src="${escapeHtml(item.imageUrl || "assets/placeholder.svg")}" alt="${escapeHtml(item.title)}" onerror="this.src='assets/placeholder.svg'">
+        <span class="source-badge">${escapeHtml(item.source)}</span>
+        <button class="favorite-button ${fav ? "active" : ""} js-favorite" data-id="${escapeHtml(item.id)}">${fav ? "♥" : "♡"}</button>
+      </div>
       <div class="lot-content">
-        <div class="category">${escapeHtml(lot.category || "Outros")}</div>
-        <h3 class="lot-title">${escapeHtml(lot.title)}</h3>
-
+        <div class="category">${escapeHtml(item.category || "Diversos")}</div>
+        <h3 class="lot-title">${escapeHtml(item.title)}</h3>
         <div class="meta-row">
-          <span class="meta-pill">📅 Encerra ${formatDate(lot.endDate)}</span>
-          <span class="meta-pill">📍 ${escapeHtml(lot.city)}/${escapeHtml(lot.state)}</span>
-          ${lot.reference ? `<span class="meta-pill">🏷️ ${escapeHtml(lot.reference)}</span>` : ""}
+          <span class="meta-pill">📅 ${dateTime(item.endDate)}</span>
+          ${(item.city || item.state) ? `<span class="meta-pill">📍 ${escapeHtml(item.city || "Local não identificado")}${item.state ? `/${escapeHtml(item.state)}` : ""}</span>` : ""}
+          ${item.reference ? `<span class="meta-pill">🏷️ ${escapeHtml(item.reference)}</span>` : ""}
         </div>
-
-        <div class="price-row">
-          <div>
-            <div class="price-label">Lance atual</div>
-            <div class="price">${formatCurrency(lot.currentBid)}</div>
-          </div>
+        ${note ? `<p class="notes-preview"><strong>Minha anotação:</strong> ${escapeHtml(note)}</p>` : ""}
+        <div class="price-actions">
+          <div><div class="price-label">Lance atual</div><div class="price">${currency(item.currentBid)}</div></div>
           <div class="card-actions">
-            <button class="action-button js-details" data-id="${escapeHtml(lot.id)}">Ver detalhes</button>
-            <a class="action-button highlight" href="${escapeHtml(lot.url)}" target="_blank" rel="noopener noreferrer">Entrar no anúncio ↗</a>
+            <button class="action-button js-details" data-id="${escapeHtml(item.id)}">Ver detalhes</button>
+            <a class="action-button highlight" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Abrir anúncio ↗</a>
           </div>
         </div>
       </div>
-    </article>
-  `).join("");
+    </article>`;
+  }).join("");
 
-  document.querySelectorAll(".js-details").forEach(btn => {
-    btn.addEventListener("click", () => openDetails(btn.dataset.id));
-  });
+  document.querySelectorAll(".js-details").forEach(el => el.addEventListener("click", e => {
+    if (!e.target.closest(".js-favorite")) openDetails(el.dataset.id);
+  }));
+  document.querySelectorAll(".js-favorite").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation(); toggleFavorite(el.dataset.id);
+  }));
 }
-
+function toggleFavorite(id) {
+  state.favorites.has(id) ? state.favorites.delete(id) : state.favorites.add(id);
+  localStorage.setItem(STORAGE.favorites, JSON.stringify([...state.favorites]));
+  applyLocalFilters();
+}
 function openDetails(id) {
-  const lot = state.allLots.find(item => item.id === id);
-  if (!lot) return;
-  dialogContent.innerHTML = `
-    <img class="dialog-image" src="${escapeHtml(lot.imageUrl)}" alt="${escapeHtml(lot.title)}">
-    <div class="dialog-body">
-      <div class="category">${escapeHtml(lot.source)} · ${escapeHtml(lot.category)}</div>
-      <h2>${escapeHtml(lot.title)}</h2>
-      <p>${escapeHtml(lot.description || "Consulte o anúncio oficial para informações completas, taxas e condições.")}</p>
-
-      <div class="dialog-grid">
-        <div class="detail-box"><small>Lance atual</small><strong>${formatCurrency(lot.currentBid)}</strong></div>
-        <div class="detail-box"><small>Encerramento</small><strong>${formatDate(lot.endDate)}</strong></div>
-        <div class="detail-box"><small>Local</small><strong>${escapeHtml(lot.city)}/${escapeHtml(lot.state)}</strong></div>
-        <div class="detail-box"><small>Referência</small><strong>${escapeHtml(lot.reference || "Não informada")}</strong></div>
-      </div>
-
-      <a class="action-button highlight" href="${escapeHtml(lot.url)}" target="_blank" rel="noopener noreferrer">
-        Entrar no anúncio oficial ↗
-      </a>
+  const item = state.items.find(i => i.id === id);
+  if (!item || !detailsDialog || !detailsContent) return;
+  detailsContent.innerHTML = `<img class="dialog-image" src="${escapeHtml(item.imageUrl || "assets/placeholder.svg")}" alt="${escapeHtml(item.title)}">
+  <div class="dialog-body">
+    <div class="category">${escapeHtml(item.source)} · ${escapeHtml(item.category || "Diversos")}</div>
+    <h2>${escapeHtml(item.title)}</h2>
+    <p>${escapeHtml(item.description || "Consulte o anúncio oficial para detalhes completos.")}</p>
+    <div class="details-grid">
+      <div class="detail-box"><small>Lance atual</small><strong>${currency(item.currentBid)}</strong></div>
+      <div class="detail-box"><small>Encerramento</small><strong>${dateTime(item.endDate)}</strong></div>
+      <div class="detail-box"><small>Local</small><strong>${escapeHtml(item.city || "Não identificado")}${item.state ? `/${escapeHtml(item.state)}` : ""}</strong></div>
+      <div class="detail-box"><small>Referência</small><strong>${escapeHtml(item.reference || "Não informada")}</strong></div>
     </div>
-  `;
+    <label style="display:grid;gap:7px;color:var(--muted)">Minha anotação
+      <textarea id="detailNote" rows="4" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);color:var(--text)">${escapeHtml(state.notes[item.id] || "")}</textarea>
+    </label>
+    <div class="dialog-actions">
+      <button id="saveNoteButton" class="secondary-button">Salvar anotação</button>
+      <a class="primary-button" style="display:inline-flex;align-items:center" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Abrir anúncio ↗</a>
+    </div>
+  </div>`;
+  $("#saveNoteButton").addEventListener("click", () => {
+    state.notes[item.id] = $("#detailNote").value.trim();
+    localStorage.setItem(STORAGE.notes, JSON.stringify(state.notes));
+    detailsDialog.close(); applyLocalFilters();
+  });
   detailsDialog.showModal();
 }
-
-async function runSearch(query) {
-  loading.classList.remove("hidden");
-  emptyState.classList.add("hidden");
+async function searchApi(query = "") {
+  if (API_BASE.includes("COLE_AQUI")) {
+    summary.textContent = "Configure a URL da API na primeira linha do arquivo app.js.";
+    emptyState?.classList.remove("hidden");
+    return;
+  }
+  summary.textContent = "Consultando os sites públicos. Aguarde...";
   results.innerHTML = "";
+  emptyState?.classList.add("hidden");
   try {
-    const response = await fetch('data/leiloes.json');
-    if (!response.ok) throw new Error("Falha na consulta");
-    const payload = await response.json();
-    state.query = query.trim();
-    const terms = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/\s+/).filter(Boolean);
-    state.allLots = (payload.items || []).filter(lot => { const h = [lot.title, lot.description, lot.category, lot.city, lot.state, lot.source, lot.reference].join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); return !terms.length || terms.every(t => h.includes(t)); });
-    populateFilters(state.allLots);
-    applyFilters();
+    const url = new URL("/api/leiloes", API_BASE);
+    if (query) url.searchParams.set("q", query);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`API respondeu ${response.status}`);
+    const data = await response.json();
+    state.items = data.items || [];
+    state.query = query;
+    populateFilters();
+    applyLocalFilters();
+    if (data.errors?.length) console.warn("Algumas fontes falharam:", data.errors);
   } catch (error) {
     console.error(error);
-    resultsSummary.textContent = "Não foi possível concluir a busca.";
-    emptyState.classList.remove("hidden");
-    emptyState.querySelector("h3").textContent = "Erro ao consultar as fontes";
-    emptyState.querySelector("p").textContent = "Verifique se o servidor está em execução e tente novamente.";
-  } finally {
-    loading.classList.add("hidden");
+    summary.textContent = "Não foi possível falar com a API. Confirme a URL e se o Render está online.";
+    emptyState?.classList.remove("hidden");
   }
 }
 
-searchForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  runSearch(searchInput.value);
+$("#searchForm")?.addEventListener("submit", e => {
+  e.preventDefault();
+  searchApi(searchInput.value.trim());
 });
-
-Object.values(filters).forEach(select => select.addEventListener("change", applyFilters));
-
-$("#clearFilters").addEventListener("click", () => {
-  Object.values(filters).forEach(select => {
-    if (select !== filters.sort) select.value = "";
-  });
-  filters.sort.value = "dateAsc";
-  applyFilters();
+Object.values(filters).filter(Boolean).forEach(select => select.addEventListener("change", applyLocalFilters));
+$("#clearButton")?.addEventListener("click", () => {
+  searchInput.value = "";
+  Object.values(filters).filter(Boolean).forEach(s => s.value = "");
+  if (filters.sort) filters.sort.value = "dateAsc";
+  searchApi("");
 });
-
-$("#closeDialog").addEventListener("click", () => detailsDialog.close());
-detailsDialog.addEventListener("click", (event) => {
-  if (event.target === detailsDialog) detailsDialog.close();
-});
-
-$("#themeToggle").addEventListener("click", () => {
+document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => {
+  document.getElementById(button.dataset.close)?.close();
+}));
+$("#themeButton")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+  localStorage.setItem(STORAGE.theme, document.body.classList.contains("light") ? "light" : "dark");
 });
-if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
+if (localStorage.getItem(STORAGE.theme) === "light") document.body.classList.add("light");
 
-runSearch("");
+searchApi("");
