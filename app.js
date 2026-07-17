@@ -1,5 +1,5 @@
 /*
- Radar Leilões Frontend v1.1
+ Radar Leilões Frontend v2.0
  Antes de publicar, altere somente a linha API_BASE abaixo.
 */
 const API_BASE = "https://radarleiloes-api.onrender.com";
@@ -177,8 +177,9 @@ async function searchApi(query = "") {
   results.innerHTML = "";
   emptyState?.classList.add("hidden");
   try {
-    const url = new URL("/api/leiloes", API_BASE);
+    const url = new URL("/api/search", API_BASE);
     if (query) url.searchParams.set("q", query);
+    url.searchParams.set("refresh", "1");
     const response = await fetch(url);
     if (!response.ok) throw new Error(`API respondeu ${response.status}`);
     const data = await response.json();
